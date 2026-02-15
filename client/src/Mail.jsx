@@ -5,7 +5,7 @@ function Mail() {
   const [formData, setFormData] = useState({
     senderName: "",
     gmail: "",
-    appPassword: "",
+    accessToken: "",
     subject: "",
     message: "",
     recipients: "",
@@ -23,41 +23,64 @@ function Mail() {
     window.location.href = "/login";
   };
 
+  // Open popup for Gmail OAuth
+  const authorizeGmail = async () => {
+    const res = await axios.get(`${import.meta.env.VITE_API_URL}/auth-url`);
+    const width = 500,
+      height = 600,
+      left = window.innerWidth / 2 - width / 2,
+      top = window.innerHeight / 2 - height / 2;
+
+    const popup = window.open(
+      res.data.url,
+      "Gmail Authorization",
+      `width=${width},height=${height},top=${top},left=${left}`,
+    );
+
+    // Listen for message from popup
+    window.addEventListener("message", async function handler(e) {
+      if (e.data.type === "oauth-code") {
+        window.removeEventListener("message", handler);
+        const tokenRes = await axios.post(
+          `${import.meta.env.VITE_API_URL}/get-token`,
+          { code: e.data.code },
+        );
+
+        setFormData({
+          ...formData,
+          accessToken: tokenRes.data.access_token,
+          gmail: tokenRes.data.email || formData.gmail,
+        });
+        setStatus({ type: "success", message: "Gmail authorized!" });
+        popup.close();
+      }
+    });
+  };
+
   const sendMail = async () => {
     setLoading(true);
     setStatus(null);
 
     try {
       const token = localStorage.getItem("token");
-
       const res = await axios.post(
         `${import.meta.env.VITE_API_URL}/send-mails`,
         formData,
-        {
-          headers: {
-            Authorization: token,
-          },
-        },
+        { headers: { Authorization: token } },
       );
 
-      setStatus({
-        type: "success",
-        message: res.data.message,
-      });
+      setStatus({ type: "success", message: res.data.message });
 
       setFormData({
         senderName: "",
         gmail: "",
-        appPassword: "",
+        accessToken: "",
         subject: "",
         message: "",
         recipients: "",
       });
     } catch (error) {
-      setStatus({
-        type: "danger",
-        message: "Failed to send emails.",
-      });
+      setStatus({ type: "danger", message: "Failed to send emails." });
     }
 
     setLoading(false);
@@ -81,14 +104,12 @@ function Mail() {
               value={formData.senderName}
               onChange={handleChange}
             />
-            <input
-              className="form-control mb-3"
-              name="appPassword"
-              type="password"
-              placeholder="App Password"
-              value={formData.appPassword}
-              onChange={handleChange}
-            />
+            <button
+              className="btn btn-outline-primary mb-3 w-100"
+              onClick={authorizeGmail}
+            >
+              {formData.accessToken ? "Gmail Authorized" : "Authorize Gmail"}
+            </button>
             <textarea
               className="form-control"
               rows="4"
@@ -105,7 +126,7 @@ function Mail() {
               name="gmail"
               placeholder="Your Gmail"
               value={formData.gmail}
-              onChange={handleChange}
+              readOnly
             />
             <input
               className="form-control mb-3"
@@ -129,7 +150,7 @@ function Mail() {
           <button
             className="btn btn-primary w-100"
             onClick={sendMail}
-            disabled={loading}
+            disabled={loading || !formData.accessToken}
           >
             {loading ? "Sending..." : "Send All"}
           </button>
