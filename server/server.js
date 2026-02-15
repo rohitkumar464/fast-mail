@@ -85,14 +85,32 @@ const oAuth2Client = new google.auth.OAuth2(
    STEP 1: CONNECT GMAIL
 ========================= */
 
-app.get("/auth/google", authMiddleware, (req, res) => {
-  const url = oAuth2Client.generateAuthUrl({
-    access_type: "offline",
-    scope: ["https://www.googleapis.com/auth/gmail.send"],
-    prompt: "consent",
-  });
+app.get("/auth/google", async (req, res) => {
+  const token = req.query.token;
 
-  res.redirect(url);
+  if (!token) {
+    return res.status(401).json({ message: "No token" });
+  }
+
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const user = await User.findById(decoded.id);
+
+    if (!user) {
+      return res.status(401).json({ message: "User not found" });
+    }
+
+    const url = oAuth2Client.generateAuthUrl({
+      access_type: "offline",
+      scope: ["https://www.googleapis.com/auth/gmail.send"],
+      prompt: "consent",
+      state: user._id.toString(),
+    });
+
+    res.redirect(url);
+  } catch (err) {
+    return res.status(401).json({ message: "Invalid token" });
+  }
 });
 
 /* =========================
@@ -100,26 +118,15 @@ app.get("/auth/google", authMiddleware, (req, res) => {
 ========================= */
 
 app.get("/oauth2callback", async (req, res) => {
-  const { code } = req.query;
+  const { code, state } = req.query;
 
   try {
     const { tokens } = await oAuth2Client.getToken(code);
 
-    const ticket = await oAuth2Client.verifyIdToken({
-      idToken: tokens.id_token,
-      audience: process.env.GOOGLE_CLIENT_ID,
-    });
+    const user = await User.findById(state);
 
-    const payload = ticket.getPayload();
-    const gmail = payload.email;
-
-    // Find logged-in user by gmail OR update manually
-    const user = await User.findOne({ gmail });
-
-    if (user) {
-      user.refreshToken = tokens.refresh_token;
-      await user.save();
-    }
+    user.refreshToken = tokens.refresh_token;
+    await user.save();
 
     res.send("✅ Gmail connected successfully! You can close this tab.");
   } catch (error) {
