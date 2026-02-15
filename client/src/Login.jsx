@@ -13,7 +13,10 @@ function Login() {
 
   const loginUser = async () => {
     try {
-      const res = await axios.post("http://localhost:5000/login", form);
+      const res = await axios.post(
+        `${import.meta.env.VITE_API_URL}/login`,
+        form,
+      );
 
       localStorage.setItem("token", res.data.token);
 

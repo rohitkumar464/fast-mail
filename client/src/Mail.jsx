@@ -31,7 +31,7 @@ function Mail() {
       const token = localStorage.getItem("token");
 
       const res = await axios.post(
-        "http://localhost:5000/send-mails",
+        `${import.meta.env.VITE_API_URL}/send-mails`,
         formData,
         {
           headers: {
