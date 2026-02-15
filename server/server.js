@@ -8,23 +8,24 @@ const nodemailer = require("nodemailer");
 
 const app = express();
 
+// -----------------------------
+// MIDDLEWARE
+// -----------------------------
 app.use(
   cors({
     origin: process.env.CLIENT_URL,
     credentials: true,
   }),
 );
-
 app.use(express.json());
 
-/* =========================
-   DATABASE
-========================= */
-
+// -----------------------------
+// DATABASE
+// -----------------------------
 mongoose
   .connect(process.env.MONGO_URI)
   .then(() => console.log("MongoDB Connected"))
-  .catch((err) => console.log(err));
+  .catch((err) => console.error(err));
 
 const UserSchema = new mongoose.Schema({
   username: String,
@@ -32,33 +33,32 @@ const UserSchema = new mongoose.Schema({
   gmail: String,
   refreshToken: String,
 });
-
 const User = mongoose.model("User", UserSchema);
 
-/* =========================
-   JWT MIDDLEWARE
-========================= */
-
+// -----------------------------
+// JWT AUTH MIDDLEWARE
+// -----------------------------
 const authMiddleware = async (req, res, next) => {
   const token = req.headers.authorization;
   if (!token) return res.status(401).json({ message: "No token" });
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id);
+    const user = await User.findById(decoded.id);
+    if (!user) return res.status(401).json({ message: "User not found" });
+    req.user = user;
     next();
-  } catch {
+  } catch (err) {
+    console.error(err);
     res.status(401).json({ message: "Invalid token" });
   }
 };
 
-/* =========================
-   LOGIN
-========================= */
-
+// -----------------------------
+// LOGIN
+// -----------------------------
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
-
   const user = await User.findOne({ username });
   if (!user) return res.status(400).json({ message: "User not found" });
   if (user.password !== password)
@@ -71,99 +71,76 @@ app.post("/login", async (req, res) => {
   res.json({ token });
 });
 
-/* =========================
-   GOOGLE OAUTH2 SETUP
-========================= */
-
+// -----------------------------
+// GOOGLE OAUTH2 SETUP
+// -----------------------------
 const oAuth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  "https://fast-mail.onrender.com/oauth2callback",
+  `${process.env.SERVER_URL}/oauth2callback`, // backend server callback
 );
 
-/* =========================
-   STEP 1: CONNECT GMAIL
-========================= */
-
-app.get("/auth/google", async (req, res) => {
-  const token = req.query.token;
-
-  if (!token) {
-    return res.status(401).json({ message: "No token" });
-  }
-
-  try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    const user = await User.findById(decoded.id);
-
-    if (!user) {
-      return res.status(401).json({ message: "User not found" });
-    }
-
-    const url = oAuth2Client.generateAuthUrl({
-      access_type: "offline",
-      scope: ["https://www.googleapis.com/auth/gmail.send"],
-      prompt: "consent",
-      state: user._id.toString(),
-    });
-
-    res.redirect(url);
-  } catch (err) {
-    return res.status(401).json({ message: "Invalid token" });
-  }
+// -----------------------------
+// STEP 1: CONNECT GMAIL
+// -----------------------------
+app.get("/auth/google", authMiddleware, (req, res) => {
+  const url = oAuth2Client.generateAuthUrl({
+    access_type: "offline", // must be offline to get refresh token
+    scope: ["https://www.googleapis.com/auth/gmail.send"],
+    prompt: "consent",
+    state: req.user._id.toString(),
+  });
+  res.redirect(url);
 });
 
-/* =========================
-   STEP 2: CALLBACK
-========================= */
-
+// -----------------------------
+// STEP 2: CALLBACK
+// -----------------------------
 app.get("/oauth2callback", async (req, res) => {
-  const { code, state } = req.query;
-
+  const { code, state } = req.query; // state = user ID
   try {
     const { tokens } = await oAuth2Client.getToken(code);
     oAuth2Client.setCredentials(tokens);
 
     const user = await User.findById(state);
-    user.refreshToken = tokens.refresh_token;
+    user.refreshToken = tokens.refresh_token; // store refresh token
+    user.gmail = user.gmail || ""; // optionally store Gmail address
     await user.save();
 
-    // Redirect to frontend using CLIENT_URL from .env
     res.redirect(`${process.env.CLIENT_URL}?gmailConnected=true`);
   } catch (error) {
-    console.error(error);
+    console.error("OAuth2 callback error:", error);
     res.redirect(`${process.env.CLIENT_URL}?gmailConnected=false`);
   }
 });
 
-/* =========================
-   SEND EMAIL
-========================= */
-
+// -----------------------------
+// SEND EMAIL
+// -----------------------------
 app.post("/send-mails", authMiddleware, async (req, res) => {
   const { senderName, subject, message, recipients } = req.body;
 
+  if (!req.user.refreshToken) {
+    return res.status(400).json({ message: "Please connect Gmail first." });
+  }
+
+  const transporter = nodemailer.createTransport({
+    service: "gmail",
+    auth: {
+      type: "OAuth2",
+      user: req.user.gmail,
+      clientId: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      refreshToken: req.user.refreshToken,
+    },
+  });
+
+  const emailList = recipients
+    .split(/[\n,]+/)
+    .map((email) => email.trim())
+    .filter((email) => email);
+
   try {
-    if (!req.user.refreshToken) {
-      return res.status(400).json({ message: "Please connect Gmail first." });
-    }
-
-    const transporter = nodemailer.createTransport({
-      service: "gmail",
-      auth: {
-        type: "OAuth2",
-        user: req.user.gmail,
-        clientId: process.env.GOOGLE_CLIENT_ID,
-        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        refreshToken: req.user.refreshToken,
-      },
-    });
-
-    const emailList = recipients
-      .split(/[\n,]+/)
-      .map((email) => email.trim())
-      .filter((email) => email);
-
     await transporter.sendMail({
       from: `"${senderName}" <${req.user.gmail}>`,
       bcc: emailList,
@@ -176,15 +153,14 @@ app.post("/send-mails", authMiddleware, async (req, res) => {
       message: `Sent to ${emailList.length} emails successfully!`,
     });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Failed to send emails" });
+    console.error("Send mail error:", error.response || error);
+    res.status(500).json({ message: "Failed to send emails", error });
   }
 });
 
-/* =========================
-   START SERVER
-========================= */
-
+// -----------------------------
+// START SERVER
+// -----------------------------
 app.listen(process.env.PORT, () =>
   console.log(`Server running on port ${process.env.PORT}`),
 );
