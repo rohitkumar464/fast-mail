@@ -1,16 +1,24 @@
 import axios from "axios";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 function Mail() {
+  const [status, setStatus] = useState(null); // define first
   const [formData, setFormData] = useState({
     senderName: "",
     subject: "",
     message: "",
     recipients: "",
   });
-
-  const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("gmailConnected") === "true") {
+      setStatus({ type: "success", message: "Gmail connected successfully!" });
+    } else if (params.get("gmailConnected") === "false") {
+      setStatus({ type: "danger", message: "Failed to connect Gmail." });
+    }
+  }, []);
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });

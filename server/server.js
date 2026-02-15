@@ -120,23 +120,19 @@ app.get("/auth/google", async (req, res) => {
 app.get("/oauth2callback", async (req, res) => {
   const { code, state } = req.query;
 
-  console.log("State received:", state); // Log the state to make sure it matches user ID
-
   try {
     const { tokens } = await oAuth2Client.getToken(code);
+    oAuth2Client.setCredentials(tokens);
+
     const user = await User.findById(state);
-
-    if (!user) {
-      return res.status(401).json({ message: "User not found" });
-    }
-
     user.refreshToken = tokens.refresh_token;
     await user.save();
 
-    res.send(" Gmail connected successfully! You can close this tab.");
+    // Redirect to frontend using CLIENT_URL from .env
+    res.redirect(`${process.env.CLIENT_URL}?gmailConnected=true`);
   } catch (error) {
-    console.error("Error in /oauth2callback:", error);
-    res.status(500).send("Authentication failed");
+    console.error(error);
+    res.redirect(`${process.env.CLIENT_URL}?gmailConnected=false`);
   }
 });
 
