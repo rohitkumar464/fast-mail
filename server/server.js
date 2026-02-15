@@ -33,12 +33,13 @@ app.get("/", (req, res) => {
 });
 
 app.post("/login", async (req, res) => {
-  console.log("Login body:", req.body); // Debug
+  console.log("Login request body:", req.body); // Debug
 
   const { username, password } = req.body;
-
   const user = await User.findOne({ username });
-  console.log("User found:", user); // Debug
+  console.log("User found:", user);
+  console.log("Password received:", password);
+  console.log("Password match?", user && user.password === password);
 
   if (!user) return res.status(400).json({ message: "User not found" });
   if (user.password !== password)

@@ -16,6 +16,11 @@ function Login() {
       const res = await axios.post(
         `${import.meta.env.VITE_API_URL}/login`,
         form,
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
       );
 
       localStorage.setItem("token", res.data.token);
