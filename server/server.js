@@ -78,7 +78,7 @@ app.post("/login", async (req, res) => {
 const oAuth2Client = new google.auth.OAuth2(
   process.env.GOOGLE_CLIENT_ID,
   process.env.GOOGLE_CLIENT_SECRET,
-  "https://fast-mail-4fri.onrender.com/oauth2callback",
+  "https://fast-mail.onrender.com/oauth2callback",
 );
 
 /* =========================
@@ -133,7 +133,7 @@ app.get("/oauth2callback", async (req, res) => {
     user.refreshToken = tokens.refresh_token;
     await user.save();
 
-    res.send("✅ Gmail connected successfully! You can close this tab.");
+    res.send(" Gmail connected successfully! You can close this tab.");
   } catch (error) {
     console.error("Error in /oauth2callback:", error);
     res.status(500).send("Authentication failed");
