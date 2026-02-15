@@ -120,17 +120,22 @@ app.get("/auth/google", async (req, res) => {
 app.get("/oauth2callback", async (req, res) => {
   const { code, state } = req.query;
 
+  console.log("State received:", state); // Log the state to make sure it matches user ID
+
   try {
     const { tokens } = await oAuth2Client.getToken(code);
-
     const user = await User.findById(state);
+
+    if (!user) {
+      return res.status(401).json({ message: "User not found" });
+    }
 
     user.refreshToken = tokens.refresh_token;
     await user.save();
 
     res.send("✅ Gmail connected successfully! You can close this tab.");
   } catch (error) {
-    console.error(error);
+    console.error("Error in /oauth2callback:", error);
     res.status(500).send("Authentication failed");
   }
 });
