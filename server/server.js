@@ -26,29 +26,23 @@ const UserSchema = new mongoose.Schema({
   username: String,
   password: String,
 });
-
 const User = mongoose.model("User", UserSchema);
 
 app.get("/", (req, res) => {
   res.send("Fast Mail API is running");
 });
 
-app.listen(process.env.PORT, () =>
-  console.log(`Server running on port ${process.env.PORT}`),
-);
-
 app.post("/login", async (req, res) => {
+  console.log("Login body:", req.body); // Debug
+
   const { username, password } = req.body;
 
   const user = await User.findOne({ username });
+  console.log("User found:", user); // Debug
 
-  if (!user) {
-    return res.status(400).json({ message: "User not found" });
-  }
-
-  if (user.password !== password) {
+  if (!user) return res.status(400).json({ message: "User not found" });
+  if (user.password !== password)
     return res.status(400).json({ message: "Invalid password" });
-  }
 
   const token = jwt.sign({ id: user._id }, process.env.JWT_SECRET, {
     expiresIn: "1d",
