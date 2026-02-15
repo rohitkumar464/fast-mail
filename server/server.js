@@ -7,6 +7,7 @@ const { google } = require("googleapis");
 const nodemailer = require("nodemailer");
 
 const app = express();
+const gmailTokens = {};
 
 // ====================
 // CORS Setup
@@ -115,15 +116,11 @@ app.get("/oauth2callback", async (req, res) => {
     const { tokens } = await oAuth2Client.getToken(code);
     oAuth2Client.setCredentials(tokens);
 
-    const user = await User.findById(state);
-    user.refreshToken = tokens.refresh_token;
-    user.gmail = oAuth2Client.credentials.id_token
-      ? oAuth2Client.credentials.id_token.email
-      : user.gmail;
-    await user.save();
+    // Store token in memory instead of DB
+    gmailTokens[state] = tokens.refresh_token;
 
-    // Redirect back to frontend with status
-    res.redirect(`${process.env.CLIENT_URL}?gmailConnected=true`);
+    // Redirect to frontend
+    res.redirect(`${process.env.CLIENT_URL}?gmailConnected=true&user=${state}`);
   } catch (error) {
     console.error(error);
     res.redirect(`${process.env.CLIENT_URL}?gmailConnected=false`);
@@ -136,29 +133,31 @@ app.get("/oauth2callback", async (req, res) => {
 app.post("/send-mails", authMiddleware, async (req, res) => {
   const { senderName, subject, message, recipients } = req.body;
 
-  try {
-    if (!req.user.refreshToken) {
-      return res.status(400).json({ message: "Please connect Gmail first." });
-    }
+  const refreshToken = gmailTokens[req.user._id]; // fetch from memory
 
+  if (!refreshToken) {
+    return res.status(400).json({ message: "Please connect Gmail first." });
+  }
+
+  try {
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
         type: "OAuth2",
-        user: req.user.gmail,
+        user: req.user.username, // use your existing username as Gmail
         clientId: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
-        refreshToken: req.user.refreshToken,
+        refreshToken,
       },
     });
 
     const emailList = recipients
       .split(/[\n,]+/)
-      .map((e) => e.trim())
-      .filter(Boolean);
+      .map((email) => email.trim())
+      .filter((email) => email);
 
     await transporter.sendMail({
-      from: `"${senderName}" <${req.user.gmail}>`,
+      from: `"${senderName}" <${req.user.username}>`,
       bcc: emailList,
       subject,
       text: message,
