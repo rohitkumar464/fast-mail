@@ -27,6 +27,14 @@ const UserSchema = new mongoose.Schema({
 
 const User = mongoose.model("User", UserSchema);
 
+app.get("/", (req, res) => {
+  res.send("Fast Mail API is running");
+});
+
+app.listen(process.env.PORT, () =>
+  console.log(`Server running on port ${process.env.PORT}`),
+);
+
 app.post("/login", async (req, res) => {
   const { username, password } = req.body;
 
